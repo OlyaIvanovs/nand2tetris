@@ -39,5 +39,34 @@ CHIP CPU {
         pc[15];          // address of next instruction
 
     PARTS:
-    // Put your code here:
+    Mux16(a=instruction, b=outRegA, sel=instruction[15], out=regA);
+
+    Not(in=instruction[15], out=preloadA);
+    Or(a=preloadA, b=instruction[5], out=loadA);
+
+    And(a=instruction[15], b=instruction[3], out=writeM); // writeM Write to Memory ?
+
+    And(a=instruction[4], b=instruction[15], out=loadD); // write in D Register
+    DRegister(in=outRegD, load=loadD, out=registerD);
+
+    ARegister(in=regA, load=loadA, out[0..14]=addressM, out=registerA); // write in A Register
+
+    Mux16(a=inM, b=registerA, sel=instruction[12], out=val1); //A or M
+
+    ALU(x=val1 , y=registerD  , zx=instruction[11] , nx=instruction[10] ,zy=instruction[9],
+     ny=instruction[8]  ,f=instruction[7]  , no=instruction[6]  , out=outM, out=outRegD, out=outRegA, zr=outZr, ng=outNg);
+
+    Xor(a=outNg, b=outZr, out=preoutPl); // check if out > 0
+    Not(in=preoutPl, out=outPl); 
+    
+    And(a=outZr, b=instruction[1], out=pcload1); // jump if out=0
+    And(a=outNg, b=instruction[2], out=pcload2); // jump if out<0
+    And(a=outPl, b=instruction[0], out=pcload3); // jump if out>0
+    Or(a=pcload1, b=pcload2, out=pcpreload);
+    Or(a=pcload3, b=pcpreload, out=pcload); // jump for PC
+    And(a=instruction[15], b=pcload, out=jmp); // only load PC if C-inst and other conditions met
+
+    Not(in=jmp, out=pcinc); // inc for PC
+    
+    PC(in=registerA, load=jmp, inc=pcinc, reset=reset, out[0..14]=pc);
 }
