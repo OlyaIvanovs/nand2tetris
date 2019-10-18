@@ -49,12 +49,14 @@ CHIP CPU {
     And(a=instruction[4], b=instruction[15], out=loadD); // write in D Register
     DRegister(in=outRegD, load=loadD, out=registerD);
 
-    ARegister(in=regA, load=loadA, out[0..14]=addressM, out=registerA); // write in A Register
+    ARegister(in=regA, load=loadA, out[0..14]=addressM, out=registerA); // write in A Register?
 
-    Mux16(a=inM, b=registerA, sel=instruction[12], out=val1); //A or M
+    And(a=instruction[12], b=instruction[15], out=AorM);
+    Mux16(a=registerA, b=inM, sel=AorM, out=val1); //A or M
 
-    ALU(x=val1 , y=registerD  , zx=instruction[11] , nx=instruction[10] ,zy=instruction[9],
-     ny=instruction[8]  ,f=instruction[7]  , no=instruction[6]  , out=outM, out=outRegD, out=outRegA, zr=outZr, ng=outNg);
+    // ALU
+    ALU(x=registerD , y=val1  , zx=instruction[11] , nx=instruction[10] ,zy=instruction[9],
+     ny=instruction[8], f=instruction[7], no=instruction[6], out=outM, out=outRegD, out=outRegA, zr=outZr, ng=outNg);
 
     Xor(a=outNg, b=outZr, out=preoutPl); // check if out > 0
     Not(in=preoutPl, out=outPl); 
@@ -64,7 +66,7 @@ CHIP CPU {
     And(a=outPl, b=instruction[0], out=pcload3); // jump if out>0
     Or(a=pcload1, b=pcload2, out=pcpreload);
     Or(a=pcload3, b=pcpreload, out=pcload); // jump for PC
-    And(a=instruction[15], b=pcload, out=jmp); // only load PC if C-inst and other conditions met
+    And(a=instruction[15], b=pcload, out=jmp); // only load PC if C-instruction
 
     Not(in=jmp, out=pcinc); // inc for PC
     
