@@ -22,7 +22,7 @@ typedef struct Command {
   char comp[10];  // for C command
   int address;    // for A command
 
-  char binary[16];
+  char binary[17];
 } Command;
 
 // ======================================= Globals ===============================================//
@@ -121,14 +121,27 @@ void parse_c_command(char *instruction, Command *command) {
   }
 }
 
-void to_binary(char number_line) {
+void to_binary(int value, char *command_line, int len) {
+  char line[MAXLEN];
+  int i = 0;
+  while (value != 0) {
+    line[i++] = (value % 2 + '0');
+    value = value / 2;
+  }
+  int empty_bites = len - i;
+  while (empty_bites--) {
+    *command_line++ = '0';
+  }
+  while (i--) {
+    *command_line++ = line[i];
+  }
 }
 
 // ======================================= Main Loop==============================================//
 
 int main(int argc, char *argv[]) {
   char instruction[MAXLEN] = "AD = A + 1; JLE // lalal";  // 111 0 110111 110 110
-  // char instruction[MAXLEN] = "@32 // lalal";  // 1111 1101 1101 1000
+  // char instruction[MAXLEN] = "@12 // lalal";  // 1111 1101 1101 1000
 
   remove_spaces(&instruction[0]);
 
@@ -155,7 +168,7 @@ int main(int argc, char *argv[]) {
   if (command.type == COMMAND_C) {
     strcpy(command.binary, "111");
 
-    for (int i = 0; i < 30; i++) {
+    for (int i = 0; i < 29; i++) {
       if (strcmp(command.comp, gComp[i]) == 0) {
         strcat(command.binary, gCompBinary[i]);
       }
@@ -176,9 +189,11 @@ int main(int argc, char *argv[]) {
 
   if (command.type == COMMAND_A) {
     strcpy(command.binary, "0");
-    to_binary(&command_binary[1]);
+    to_binary(command.address, &command.binary[1], 15);  // TODO address size
   }
 
-  printf("%s", command.binary);
+  // command.binary[16] = '\0';  // last symbol for binary instruction
+
+  printf(" Command binary %s   ", command.binary);
   return 0;
 }
