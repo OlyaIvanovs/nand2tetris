@@ -30,10 +30,10 @@ typedef struct Command {
 char *gJump[] = {"", "JGT", "JEQ", "JGE", "JLT", "JNE", "JLE", "JMP"};
 char *gJumpBinary[] = {"000", "001", "010", "011", "100", "101", "110", "111"};
 
-char *gDest[] = {"", "M", "D", "MD", "A", "AM", "AD", "AMD"};
-char *gDestBinary[] = {"000", "001", "010", "011", "100", "101", "110", "111"};
+char *gDest[] = {"", "0", "M", "D", "MD", "A", "AM", "AD", "AMD"};
+char *gDestBinary[] = {"000", "000", "001", "010", "011", "100", "101", "110", "111"};
 
-char *gComp[] = {"",    "0",   "1",   "-1",  "D",   "A",   "!D",  "A",   "-D",  "-A",
+char *gComp[] = {"",    "0",   "1",   "-1",  "D",   "A",   "!D",  "!A",  "-D",  "-A",
                  "D+1", "A+1", "D-1", "A-1", "D+A", "D-A", "A-D", "D&A", "D|A", "M",
                  "!M",  "-M",  "M+1", "M-1", "D+M", "D-M", "M-D", "D&M", "D|M"};
 char *gCompBinary[] = {"0000000", "0101010", "0111111", "0111010", "0001100", "0110000",
@@ -46,33 +46,40 @@ char *gCompBinary[] = {"0000000", "0101010", "0111111", "0111010", "0001100", "0
 
 void remove_spaces(char *line) {
   char copyline[MAXLEN];
-  char *copypointer = &copyline[0];
+  char *copypointer = copyline;
 
   int pc = 0;
   int pcc = 0;
 
   while (*line != '\0') {
-    if (*line == ' ') {  // remove white spaces from line
+    if (isspace(*line)) {  // remove white spaces from line
       pc++;
       line++;
       continue;
     }
-    pcc++;
-    *copypointer++ = *line++;
+
+    if ((*line == '/') && (*++line == '/')) {
+      *--line = '\0';
+    } else {
+      *copypointer++ = *line++;
+      pcc++;
+      pc++;
+    }
   }
 
-  while (pc--) {
+  *copypointer = '\0';
+  pcc++;
+  pc++;
+
+  while (--pc) {
     line--;
   }
-  while (pcc--) {
-    line--;
+
+  while (--pcc) {
     copypointer--;
   }
 
   while (*copypointer != '\0') {
-    if (*copypointer == '/') {  // remove comments from line
-      *copypointer = '\0';
-    }
     *line++ = *copypointer++;
   }
   *line = '\0';
@@ -92,28 +99,36 @@ int get_address(char *instruction) {
 }
 
 void parse_c_command(char *instruction, Command *command) {
-  char *comp_p = strchr(instruction, '=');
+  char *equal_p = strchr(instruction, '=');
   char *jmp_p = strchr(instruction, ';');
   char *end = strchr(instruction, '\0');
 
+  char *dest_p;
+  char *comp_p;
   char *dest_p_end;
-  if (comp_p) {
-    dest_p_end = comp_p;
-  } else if (jmp_p) {
-    dest_p_end = jmp_p;
-  } else {
-    dest_p_end = end;
-  }
-  strncpy(command->dest, instruction, dest_p_end - instruction);
+  char *comp_p_end;
 
-  if (comp_p) {
-    char *comp_p_end;
+  if (equal_p) {
+    dest_p = instruction;
+    dest_p_end = equal_p;
+    comp_p = equal_p + 1;
     if (jmp_p) {
       comp_p_end = jmp_p;
     } else {
       comp_p_end = end;
     }
-    strncpy(command->comp, comp_p + 1, comp_p_end - comp_p - 1);
+    strncpy(command->dest, dest_p, dest_p_end - dest_p);
+    strncpy(command->comp, comp_p, comp_p_end - comp_p);
+  }
+
+  if (!equal_p) {
+    comp_p = instruction;
+    if (jmp_p) {
+      comp_p_end = jmp_p;
+    } else {
+      comp_p_end = end;
+    }
+    strncpy(command->comp, comp_p, comp_p_end - comp_p);
   }
 
   if (jmp_p) {
@@ -140,60 +155,65 @@ void to_binary(int value, char *command_line, int len) {
 // ======================================= Main Loop==============================================//
 
 int main(int argc, char *argv[]) {
-  char instruction[MAXLEN] = "AD = A + 1; JLE // lalal";  // 111 0 110111 110 110
-  // char instruction[MAXLEN] = "@12 // lalal";  // 1111 1101 1101 1000
+  FILE *fp = fopen("rect/RectL.asm", "r");
+  FILE *fpbin = fopen("binary.hack", "w");
+  char instruction[MAXLEN];
 
-  remove_spaces(&instruction[0]);
+  while (fgets(instruction, MAXLEN, fp) != NULL) {
+    remove_spaces(instruction);
+    if (strlen(instruction) == 0) continue;
 
-  Command command = {};
+    Command command = {};
 
-  // Parse instruction
-  if (*instruction == '@') {
-    command.type = COMMAND_A;
-  } else if (*instruction == '(') {
-    command.type = LABEL;
-  } else {
-    command.type = COMMAND_C;
-  }
+    // Parse instruction
+    if (*instruction == '@') {
+      command.type = COMMAND_A;
+    } else if (*instruction == '(') {
+      command.type = LABEL;
+    } else {
+      command.type = COMMAND_C;
+    }
 
-  if (command.type == COMMAND_C) {
-    parse_c_command(&instruction[0], &command);
-  }
+    if (command.type == COMMAND_C) {
+      parse_c_command(&instruction[0], &command);
+    }
 
-  if (command.type == COMMAND_A) {
-    command.address = get_address(&instruction[1]);
-  }
+    if (command.type == COMMAND_A) {
+      command.address = get_address(&instruction[1]);
+    }
 
-  // Translate instruction to binary code
-  if (command.type == COMMAND_C) {
-    strcpy(command.binary, "111");
+    // Translate instruction to binary code
+    if (command.type == COMMAND_C) {
+      strcpy(command.binary, "111");
 
-    for (int i = 0; i < 29; i++) {
-      if (strcmp(command.comp, gComp[i]) == 0) {
-        strcat(command.binary, gCompBinary[i]);
+      for (int i = 0; i < 29; i++) {
+        if (strcmp(command.comp, gComp[i]) == 0) {
+          strcat(command.binary, gCompBinary[i]);
+        }
+      }
+
+      for (int i = 0; i < 8; i++) {
+        if (strcmp(command.dest, gDest[i]) == 0) {
+          strcat(command.binary, gDestBinary[i]);
+        }
+      }
+
+      for (int i = 0; i < 8; i++) {
+        if (strcmp(command.jmp, gJump[i]) == 0) {
+          strcat(command.binary, gJumpBinary[i]);
+        }
       }
     }
 
-    for (int i = 0; i < 8; i++) {
-      if (strcmp(command.dest, gDest[i]) == 0) {
-        strcat(command.binary, gDestBinary[i]);
-      }
+    if (command.type == COMMAND_A) {
+      strcpy(command.binary, "0");
+      to_binary(command.address, &command.binary[1], 15);  // TODO address size
     }
 
-    for (int i = 0; i < 8; i++) {
-      if (strcmp(command.jmp, gJump[i]) == 0) {
-        strcat(command.binary, gJumpBinary[i]);
-      }
-    }
+    fprintf(fpbin, "%s\n", command.binary);
   }
 
-  if (command.type == COMMAND_A) {
-    strcpy(command.binary, "0");
-    to_binary(command.address, &command.binary[1], 15);  // TODO address size
-  }
-
-  // command.binary[16] = '\0';  // last symbol for binary instruction
-
-  printf(" Command binary %s   ", command.binary);
+  fclose(fp);
+  fclose(fpbin);
   return 0;
 }
