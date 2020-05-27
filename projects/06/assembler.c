@@ -5,6 +5,7 @@
 #include <string.h>
 
 #define MAXLEN 100 /* max length of any command */
+#define HASHSIZE 101
 
 // ======================================= Types =================================================//
 typedef enum CommandsType {
@@ -25,6 +26,12 @@ typedef struct Command {
   char binary[17];
 } Command;
 
+typedef struct Entry {
+  struct Entry *next;  // next entry in chain
+  char *symbol;
+  int address;
+} Entry;
+
 // ======================================= Globals ===============================================//
 
 char *gJump[] = {"", "JGT", "JEQ", "JGE", "JLT", "JNE", "JLE", "JMP"};
@@ -41,6 +48,8 @@ char *gCompBinary[] = {"0000000", "0101010", "0111111", "0111010", "0001100", "0
                        "0001110", "0110010", "0000010", "0010011", "0000111", "0000000",
                        "0010101", "1110000", "1110001", "1110011", "1110111", "1110010",
                        "1000010", "1010011", "1000111", "1000000", "1010101"};
+
+static Entry *hashtab[HASHSIZE];  // TODO: rewrite!!!
 
 // ======================================= Functions ===============================================
 
@@ -83,19 +92,6 @@ void remove_spaces(char *line) {
     *line++ = *copypointer++;
   }
   *line = '\0';
-}
-
-int get_address(char *instruction) {
-  char address[MAXLEN];
-  char *address_p = &address[0];
-  int i = 0;
-  while ((*instruction++ = *address_p++) != '\0') {
-    i++;
-  }
-  while (i--) {
-    address_p--;
-  }
-  return atoi(address_p);
 }
 
 void parse_c_command(char *instruction, Command *command) {
@@ -152,18 +148,81 @@ void to_binary(int value, char *command_line, int len) {
   }
 }
 
+// Symbol table
+// Form hash value for symbol string
+unsigned hash(char *s) {
+  unsigned hashval;
+
+  for (hashval = 0; *s != '\0'; s++) hashval = *s + 31 * hashval;
+  return hashval % HASHSIZE;
+}
+
+// Look for symbol in hashtab
+Entry *lookup(char *s) {
+  Entry *entry;
+
+  for (entry = hashtab[hash(s)]; entry != NULL; entry = entry->next) {
+    if (strcmp(s, entry->symbol) == 0) return entry;
+  }
+  return NULL;
+}
+// Put symbol in hashtab
+Entry *add_entry(char *symbol, int address) {
+  Entry *entry;
+  unsigned hashval = hash(symbol);
+
+  if ((entry = lookup(symbol)) == NULL) {
+    entry = malloc(sizeof(*entry));
+    if (entry == NULL || (entry->symbol = strdup(symbol)) == NULL) {
+      return NULL;
+    }
+    entry->address = address;
+    entry->next = hashtab[hashval];
+    hashtab[hashval] = entry;
+  }
+  // if already exists?
+  return entry;
+}
+
 // ======================================= Main Loop==============================================//
 
 int main(int argc, char *argv[]) {
-  FILE *fp = fopen("rect/RectL.asm", "r");
+  FILE *fp = fopen("max/Max.asm", "r");
   FILE *fpbin = fopen("binary.hack", "w");
   char instruction[MAXLEN];
+
+  //  Symbol table as global variable TODO!
+  // Add predefined symbols in the symbol table
+  add_entry("SP", 0);
+  add_entry("LCL", 1);
+  add_entry("ARG", 2);
+  add_entry("THIS", 3);
+  add_entry("THAT", 4);
+  add_entry("R0", 0);
+  add_entry("R1", 1);
+  add_entry("R2", 2);
+  add_entry("R3", 3);
+  add_entry("R4", 4);
+  add_entry("R5", 5);
+  add_entry("R6", 6);
+  add_entry("R7", 7);
+  add_entry("R8", 8);
+  add_entry("R9", 9);
+  add_entry("R10", 10);
+  add_entry("R11", 11);
+  add_entry("R12", 12);
+  add_entry("R13", 13);
+  add_entry("R14", 14);
+  add_entry("R15", 15);
+  add_entry("SCREEN", 16384);
+  add_entry("KBD", 24576);
 
   while (fgets(instruction, MAXLEN, fp) != NULL) {
     remove_spaces(instruction);
     if (strlen(instruction) == 0) continue;
 
     Command command = {};
+    Entry *symbol;
 
     // Parse instruction
     if (*instruction == '@') {
@@ -179,7 +238,14 @@ int main(int argc, char *argv[]) {
     }
 
     if (command.type == COMMAND_A) {
-      command.address = get_address(&instruction[1]);
+      if (isdigit(instruction[1])) {
+        command.address = atoi(&instruction[1]);
+      } else if (isalpha(instruction[1])) {
+        symbol = lookup(&instruction[1]);  // check if symbol in table
+        command.address = symbol->address;
+      } else {
+        // Todo: Error!!! If nothing is founded
+      }
     }
 
     // Translate instruction to binary code
