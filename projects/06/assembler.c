@@ -11,7 +11,7 @@
 typedef enum CommandsType {
   COMMAND_A,
   COMMAND_C,
-  LABEL,
+  COMMAND_L,
 
   COMMAND_COUNT
 } CommandsType;
@@ -187,10 +187,6 @@ Entry *add_entry(char *symbol, int address) {
 // ======================================= Main Loop==============================================//
 
 int main(int argc, char *argv[]) {
-  FILE *fp = fopen("max/Max.asm", "r");
-  FILE *fpbin = fopen("binary.hack", "w");
-  char instruction[MAXLEN];
-
   //  Symbol table as global variable TODO!
   // Add predefined symbols in the symbol table
   add_entry("SP", 0);
@@ -217,7 +213,31 @@ int main(int argc, char *argv[]) {
   add_entry("SCREEN", 16384);
   add_entry("KBD", 24576);
 
+  FILE *fp = fopen("max/Max.asm", "r");
+  FILE *fpbin = fopen("binary.hack", "w");
+  char instruction[MAXLEN];
+  char label[MAXLEN];
+  int rom_address = 0;
+
+  // First pass
   while (fgets(instruction, MAXLEN, fp) != NULL) {
+    remove_spaces(instruction);
+    if (strlen(instruction) == 0) continue;
+    if (*instruction == '(') {
+      char *label_end;
+      if ((label_end = strrchr(instruction, ')'))) {
+        strncpy(label, &instruction[1], label_end - &instruction[1]);
+        label[label_end - &instruction[1]] = '\0';
+        add_entry(label, rom_address);
+      }
+    } else {
+      rom_address++;
+    }
+  }
+  fclose(fp);
+
+  FILE *fp2 = fopen("max/Max.asm", "r");
+  while (fgets(instruction, MAXLEN, fp2) != NULL) {
     remove_spaces(instruction);
     if (strlen(instruction) == 0) continue;
 
@@ -228,7 +248,8 @@ int main(int argc, char *argv[]) {
     if (*instruction == '@') {
       command.type = COMMAND_A;
     } else if (*instruction == '(') {
-      command.type = LABEL;
+      command.type = COMMAND_L;
+      continue;
     } else {
       command.type = COMMAND_C;
     }
@@ -279,7 +300,7 @@ int main(int argc, char *argv[]) {
     fprintf(fpbin, "%s\n", command.binary);
   }
 
-  fclose(fp);
+  fclose(fp2);
   fclose(fpbin);
   return 0;
 }
