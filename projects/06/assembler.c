@@ -213,7 +213,7 @@ int main(int argc, char *argv[]) {
   add_entry("SCREEN", 16384);
   add_entry("KBD", 24576);
 
-  FILE *fp = fopen("max/Max.asm", "r");
+  FILE *fp = fopen("pong/Pong.asm", "r");
   FILE *fpbin = fopen("binary.hack", "w");
   char instruction[MAXLEN];
   char label[MAXLEN];
@@ -236,7 +236,8 @@ int main(int argc, char *argv[]) {
   }
   fclose(fp);
 
-  FILE *fp2 = fopen("max/Max.asm", "r");
+  FILE *fp2 = fopen("pong/Pong.asm", "r");
+  int ram_address = 16;
   while (fgets(instruction, MAXLEN, fp2) != NULL) {
     remove_spaces(instruction);
     if (strlen(instruction) == 0) continue;
@@ -263,7 +264,12 @@ int main(int argc, char *argv[]) {
         command.address = atoi(&instruction[1]);
       } else if (isalpha(instruction[1])) {
         symbol = lookup(&instruction[1]);  // check if symbol in table
-        command.address = symbol->address;
+        if (symbol) {
+          command.address = symbol->address;
+        } else {
+          command.address = ram_address;
+          add_entry(&instruction[1], ram_address++);
+        }
       } else {
         // Todo: Error!!! If nothing is founded
       }
