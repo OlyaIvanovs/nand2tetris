@@ -213,8 +213,28 @@ int main(int argc, char *argv[]) {
   add_entry("SCREEN", 16384);
   add_entry("KBD", 24576);
 
-  FILE *fp = fopen("pong/Pong.asm", "r");
-  FILE *fpbin = fopen("binary.hack", "w");
+  // File with code to translate
+  char file_name[MAXLEN];
+  if (argc != 2) {
+    printf("Usage: ./assembler filename");
+    return 1;
+  } else {
+    strcpy(file_name, argv[1]);
+  }
+
+  FILE *fp;
+  FILE *fpbin;
+
+  if ((fpbin = fopen("binary.hack", "w")) == NULL) {
+    printf("Error: can't open file 'binary.hack'\n");
+    return 1;
+  }
+
+  if ((fp = fopen(file_name, "r")) == NULL) {
+    printf("Error: can't open file %s\n", file_name);
+    return 1;
+  }
+
   char instruction[MAXLEN];
   char label[MAXLEN];
   int rom_address = 0;
@@ -236,7 +256,7 @@ int main(int argc, char *argv[]) {
   }
   fclose(fp);
 
-  FILE *fp2 = fopen("pong/Pong.asm", "r");
+  FILE *fp2 = fopen(file_name, "r");
   int ram_address = 16;
   while (fgets(instruction, MAXLEN, fp2) != NULL) {
     remove_spaces(instruction);
