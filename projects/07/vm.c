@@ -22,8 +22,9 @@ typedef enum CommandsType {
 
 typedef struct Command {
   CommandsType type;
+  char vm_command[MAXLEN];
 
-  char asm_commands[MAXLEN];
+  char asm_command[MAXLEN];
 } Command;
 
 typedef enum KeywordType {
@@ -31,12 +32,16 @@ typedef enum KeywordType {
   KEYWORD_PUSH,
 
   KEYWORD_ADD,
+  KEYWORD_SUB,
 
   KEYWORD_LOCAL,
   KEYWORD_ARGUMENT,
   KEYWORD_THIS,
   KEYWORD_THAT,
   KEYWORD_CONSTANT,
+  KEYWORD_STATIC,
+  KEYWORD_POINTER,
+  KEYWORD_TEMP,
 
   KEYWORD_COUNT
 } KeywordType;
@@ -61,6 +66,12 @@ typedef enum MemorySegments {
   TEMP
 } MemorySegments;
 
+typedef enum MathCommands {
+  ADD,
+  SUB,
+
+} MathCommands;
+
 typedef struct Keyword {
   char *string;
 
@@ -68,6 +79,7 @@ typedef struct Keyword {
   TokenPurpose purpose;
   TokenPurpose next_token_purpose;
   MemorySegments segment;
+  MathCommands command;
 } Keyword;
 
 typedef struct Token {
@@ -84,26 +96,57 @@ typedef struct Token {
 
 // ======================================= Functions ===============================================
 
+void remove_spaces(char *line) {
+  char new_line[MAXLEN];
+  int pline = 0;
+  int k = 0;
+
+  while (isspace(*line++)) {
+    pline++;
+    continue;
+  }
+  line--;
+  while (*line != '\0') {
+    if (isspace(*line) && isspace(*(line + 1))) {
+      line++;
+      pline++;
+      continue;
+    }
+    new_line[k++] = *line++;
+    pline++;
+  }
+
+  new_line[k] = '\0';
+
+  while (pline--) {
+    line--;
+  }
+
+  strcpy(line, new_line);
+}
+
 // Return size of array with tokens, 0 if the order of tokens is wrong
 int tokenize(char *line, Token *tokens) {
-  Keyword keywords[8] = {
-      {"pop", KEYWORD_POP, MEMORY_ACCESS, SEGMENT, 0},
-      {"push", KEYWORD_PUSH, MEMORY_ACCESS, SEGMENT, 0},
-      {"add", KEYWORD_ADD, MATH, 0, 0},
-      {"local", KEYWORD_LOCAL, SEGMENT, INDEX, LOCAL},
-      {"argument", KEYWORD_ARGUMENT, SEGMENT, INDEX, ARGUMENT},
-      {"this", KEYWORD_THIS, SEGMENT, INDEX, THIS},
-      {"that", KEYWORD_THAT, SEGMENT, INDEX, THAT},
-      {"constant", KEYWORD_CONSTANT, SEGMENT, INDEX, CONSTANT},
-  };
+  Keyword keywords[12] = {
+      {"pop", KEYWORD_POP, MEMORY_ACCESS, SEGMENT, 0, 0},
+      {"push", KEYWORD_PUSH, MEMORY_ACCESS, SEGMENT, 0, 0},
 
-  while (isspace(*line++)) continue;
-  line--;
+      {"local", KEYWORD_LOCAL, SEGMENT, INDEX, LOCAL, 0},
+      {"argument", KEYWORD_ARGUMENT, SEGMENT, INDEX, ARGUMENT, 0},
+      {"this", KEYWORD_THIS, SEGMENT, INDEX, THIS, 0},
+      {"that", KEYWORD_THAT, SEGMENT, INDEX, THAT, 0},
+      {"constant", KEYWORD_CONSTANT, SEGMENT, INDEX, CONSTANT, 0},
+      {"static", KEYWORD_STATIC, SEGMENT, INDEX, STATIC, 0},
+      {"pointer", KEYWORD_POINTER, SEGMENT, INDEX, POINTER, 0},
+      {"temp", KEYWORD_TEMP, SEGMENT, INDEX, TEMP, 0},
+
+      {"add", KEYWORD_ADD, MATH, 0, 0, ADD},
+      {"sub", KEYWORD_SUB, MATH, 0, 0, SUB},
+  };
 
   char word[MAXLEN];
   int k = 0;
   int token_num = 0;
-  printf("line %s\n", line);
   while (*line != '\0') {
     word[k++] = *line++;
     if (isspace(*line)) {
@@ -136,39 +179,56 @@ int tokenize(char *line, Token *tokens) {
       line--;
     }
   }
-
-  printf("token_num %d", token_num);
-  // Check if the order of tokens is correct
-  for (int i = token_num; i > 0; i--) {
-    Token *token = tokens--;
-    Token *prev_token = tokens;
-    printf("token->purpose %d ", token->purpose);
-    if ((i > 1) && (token->purpose != prev_token->next_token_purpose)) {
-      printf("!ERROR! Next Token should be %d", prev_token->next_token_purpose);
-      return 0;
-    }
-  }
-
   return token_num;
 }
 
-void writeAritmetic() {
+void parsing(Token tokens[10], int token_num, Command *command) {
+  // Check if the order of tokens is correct
+  for (int i = token_num; i > 0; i--) {
+    if ((i > 1) && (tokens[i].purpose != tokens[i - 1].next_token_purpose)) {
+      printf("!ERROR! Next Token should be %d", tokens[i - 1].next_token_purpose);
+      return;
+    }
+  }
+
+  if (tokens[0].purpose == MEMORY_ACCESS) {
+    command->type = C_PUSH_POP;
+  }
+
+  if (tokens[0].purpose == MATH) {
+    command->type = C_ARITHMETIC;
+  }
 }
 
-void writePushPop(Token command, Token segment, Token index) {
+void writePushPop(Token command_token, Token segment, Token index, Command command) {
   if (segment.token_type.keyword.segment == CONSTANT) {
-    printf("@%d\nD=A\n@SP\nA=M\nM=D\n@SP\nM=M+1\n", index.token_type.number);
+    printf("\n//%s@%d\nD=A\n@SP\nA=M\nM=D\n@SP\nM=M+1\n", command.vm_command,
+           index.token_type.number);
     return;
   }
 
-  char *memory_segments[4] = {"LCL", "ARG", "THIS", "THAT"};
-  if (command.token_type.keyword.type == KEYWORD_PUSH) {
-    printf("@%d\nD=A\n@%s\nA=M+D\nD=M\n@SP\nM=M+1\nA=M\nM=D\n", index.token_type.number,
-           memory_segments[segment.token_type.keyword.segment]);
-  } else if (command.token_type.keyword.type == KEYWORD_POP) {
-    printf("@%d\nD=A\n@%s\nA=M+D\nD=A\n@R13\nM=D\n@SP\nM=M-1\nA=M\nD=M\n@R13\nA=M\nM=D\n",
-           index.token_type.number, memory_segments[segment.token_type.keyword.segment]);
+  if (segment.token_type.keyword.segment == STATIC) {
+    printf("\n//%s@%d\nD=A\n@SP\nA=M\nM=D\n@SP\nM=M+1\n", command.vm_command,
+           index.token_type.number);
+    return;
   }
+
+  char *memory_segments[8] = {"LCL", "ARG", "THIS", "THAT", "CONSTANT", "STATIC", "R3", "R5"};
+  if (command_token.token_type.keyword.type == KEYWORD_PUSH) {
+    printf("\n//%s@%d\nD=A\n@%s\nA=M+D\nD=M\n@SP\nM=M+1\nA=M\nM=D\n", command.vm_command,
+           index.token_type.number, memory_segments[segment.token_type.keyword.segment]);
+  } else if (command_token.token_type.keyword.type == KEYWORD_POP) {
+    printf("\n//%s@%d\nD=A\n@%s\nA=M+D\nD=A\n@R13\nM=D\n@SP\nM=M-1\nA=M\nD=M\n@R13\nA=M\nM=D\n",
+           command.vm_command, index.token_type.number,
+           memory_segments[segment.token_type.keyword.segment]);
+  }
+}
+
+void writeAritmetic(Token token_command, Command command) {
+  // ADD, SUB
+  char *diff[2] = {"M=M+D", "M=M-D"};
+  printf("\n//%s@SP\nAM=M-1\nD=M\nA=A-1\n%s\n", command.vm_command,
+         diff[token_command.token_type.keyword.command]);
 }
 
 // ======================================= Main Loop=============================================//
@@ -200,9 +260,11 @@ int main(int argc, char *argv[]) {
   char instruction[MAXLEN];
 
   while (fgets(instruction, MAXLEN, fp) != NULL) {
+    remove_spaces(instruction);
     if (strlen(instruction) == 0) continue;
 
     Command command = {};
+    strcpy(command.vm_command, instruction);
 
     // Tokenize instruction
     Token tokens[10];
@@ -210,29 +272,16 @@ int main(int argc, char *argv[]) {
     if (!tokens_num) return 0;
 
     // Parse instruction
-    for (int i = 0; i < tokens_num; i++) {
-      printf("%d ", tokens[i].purpose);
-    }
-
-    if (tokens[0].purpose == MEMORY_ACCESS) {
-      command.type = C_PUSH_POP;
-    }
-
-    // Type instruction
+    parsing(tokens, tokens_num, &command);
 
     // Translate instruction to asembler code for Hack machine
     if (command.type == C_PUSH_POP) {
-      writePushPop(tokens[0], tokens[1], tokens[2]);
+      writePushPop(tokens[0], tokens[1], tokens[2], command);
     }
 
-    // if (command.type == C_ARITHMETIC) {
-    //   writeAritmetic();
-    //   // writeAritmetic(command.aritmetic_command);
-    // } else if (command.type == C_PUSH) {
-    //   writePush();
-    // } else if (command.type == C_POP) {
-    //   writePop();
-    // }
+    if (command.type == C_ARITHMETIC) {
+      writeAritmetic(tokens[0], command);
+    }
 
     // fprintf(fpasm, "%s\n", command.asm_commands);
   }
