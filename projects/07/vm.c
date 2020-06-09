@@ -114,31 +114,22 @@ typedef struct ParseResult {
 
 void remove_spaces(char *line) {
   char new_line[MAXLEN];
-  int pline = 0;
-  int k = 0;
+  int rc = 0;  // read cursor
+  int wc = 0;  // write cursor
 
-  while (isspace(*line++)) {
-    pline++;
-    continue;
-  }
-  line--;
-  while (*line != '\0') {
-    if (isspace(*line) && isspace(*(line + 1))) {
-      line++;
-      pline++;
-      continue;
+  // Skip whitespace at the beginning
+  while (isspace(line[rc])) rc++;
+
+  while (line[rc] != '\0') {
+    if (isspace(line[rc]) && isspace(line[rc + 1])) {
+      rc++;
+    } else {
+      new_line[wc++] = line[rc++];
     }
-    new_line[k++] = *line++;
-    pline++;
   }
 
-  new_line[k] = '\0';
-
-  while (pline--) {
-    line--;
-  }
-
-  strcpy(line, new_line);
+  new_line[wc] = '\0';
+  strncpy(line, new_line, MAXLEN);
 }
 
 // Return size of array with tokens, 0 if the order of tokens is wrong
