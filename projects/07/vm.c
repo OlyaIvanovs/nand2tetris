@@ -9,7 +9,8 @@
 // ======================================= Types =================================================//
 typedef enum CommandsType {
   C_ARITHMETIC,
-  C_PUSH_POP,
+  C_PUSH,
+  C_POP,
   C_LABEL,
   C_GOTO,
   C_IF,
@@ -19,13 +20,6 @@ typedef enum CommandsType {
 
   COMMAND_COUNT
 } CommandsType;
-
-typedef struct Command {
-  CommandsType type;
-  char vm_command[MAXLEN];
-
-  char asm_command[MAXLEN];
-} Command;
 
 typedef enum KeywordType {
   KEYWORD_POP,
@@ -55,7 +49,7 @@ typedef enum TokenPurpose {
   TOKEN_COUNT
 } TokenPurpose;
 
-typedef enum MemorySegments {
+typedef enum MemorySegment {
   LOCAL,
   ARGUMENT,
   THIS,
@@ -64,7 +58,7 @@ typedef enum MemorySegments {
   STATIC,
   POINTER,
   TEMP
-} MemorySegments;
+} MemorySegment;
 
 typedef enum MathCommands {
   ADD,
@@ -72,13 +66,30 @@ typedef enum MathCommands {
 
 } MathCommands;
 
+typedef enum ParseResultCode {
+  PARSE_ERROR,
+  PARSE_SUCCESS,
+
+} ParseResultCode;
+
+typedef struct Command {
+  CommandsType type;
+
+  // for push, pop
+  MemorySegment segment;
+  int index;
+
+  char vm_command[MAXLEN];  // for comments
+  char asm_command[MAXLEN];
+} Command;
+
 typedef struct Keyword {
   char *string;
 
   KeywordType type;
   TokenPurpose purpose;
   TokenPurpose next_token_purpose;
-  MemorySegments segment;
+  MemorySegment segment;
   MathCommands command;
 } Keyword;
 
@@ -91,6 +102,11 @@ typedef struct Token {
     char text[MAXLEN];
   } token_type;
 } Token;
+
+typedef struct ParseResult {
+  ParseResultCode code;
+  char message[MAXLEN];
+} ParseResult;
 
 // ======================================= Globals ===============================================//
 
@@ -182,46 +198,110 @@ int tokenize(char *line, Token *tokens) {
   return token_num;
 }
 
-void parsing(Token tokens[10], int token_num, Command *command) {
+ParseResult parsing(Token tokens[10], int token_num, Command *command) {
+  ParseResult result = {};
+  char *token_purposes[4] = {"MEMORY_ACCESS", "SEGMENT", "INDEX", "MATH"};
+
+  // Check if number of tokens is correct
+  if (tokens[0].purpose == MEMORY_ACCESS && token_num != 3) {
+  }
+
   // Check if the order of tokens is correct
-  for (int i = token_num; i > 0; i--) {
+  for (int i = token_num - 1; i > 0; i--) {
     if ((i > 1) && (tokens[i].purpose != tokens[i - 1].next_token_purpose)) {
-      printf("!ERROR! Next Token should be %d", tokens[i - 1].next_token_purpose);
-      return;
+      sprintf(result.message, "!ERROR! Next Token should be %s",
+              token_purposes[tokens[i - 1].next_token_purpose]);
+      result.code = PARSE_ERROR;
+      return result;
     }
   }
 
   if (tokens[0].purpose == MEMORY_ACCESS) {
-    command->type = C_PUSH_POP;
+    if (tokens[0].token_type.keyword.type == KEYWORD_POP) {
+      command->type = C_POP;
+    } else if (tokens[0].token_type.keyword.type == KEYWORD_PUSH) {
+      command->type = C_PUSH;
+    }
+
+    command->segment = tokens[1].token_type.keyword.segment;
+    command->index = tokens[2].token_type.number;
+
+    if (command->index < 0) {
+      sprintf(result.message, "!ERROR! Index should be > 0");
+      result.code = PARSE_ERROR;
+      return result;
+    }
+
+    if (command->segment == TEMP && (command->index > 7)) {
+      sprintf(result.message, "!ERROR! Index should be <= 7");
+      result.code = PARSE_ERROR;
+      return result;
+    }
+
+    if (command->segment == POINTER && (command->index > 1)) {
+      sprintf(result.message, "!ERROR! Index for pointer segment should be 0 or 1");
+      result.code = PARSE_ERROR;
+      return result;
+    }
   }
 
   if (tokens[0].purpose == MATH) {
     command->type = C_ARITHMETIC;
   }
+
+  result.code = PARSE_SUCCESS;
+
+  return result;
 }
 
-void writePushPop(Token command_token, Token segment, Token index, Command command) {
-  if (segment.token_type.keyword.segment == CONSTANT) {
-    printf("\n//%s@%d\nD=A\n@SP\nA=M\nM=D\n@SP\nM=M+1\n", command.vm_command,
-           index.token_type.number);
+void writePush(Command *command) {
+  printf("push");
+  if (command->segment == CONSTANT) {
+    printf("\n//%s@%d\nD=A\n@SP\nM=M+1\n\nA=M-1\nM=D\n", command->vm_command, command->index);
     return;
   }
 
-  if (segment.token_type.keyword.segment == STATIC) {
-    printf("\n//%s@%d\nD=A\n@SP\nA=M\nM=D\n@SP\nM=M+1\n", command.vm_command,
-           index.token_type.number);
+  if (command->segment == STATIC) {
+    printf("\n//%s@%d\nD=A\n@SP\nA=M\nM=D\n@SP\nM=M+1\n", command->vm_command, command->index);
     return;
   }
 
-  char *memory_segments[8] = {"LCL", "ARG", "THIS", "THAT", "CONSTANT", "STATIC", "R3", "R5"};
-  if (command_token.token_type.keyword.type == KEYWORD_PUSH) {
-    printf("\n//%s@%d\nD=A\n@%s\nA=M+D\nD=M\n@SP\nM=M+1\nA=M\nM=D\n", command.vm_command,
-           index.token_type.number, memory_segments[segment.token_type.keyword.segment]);
-  } else if (command_token.token_type.keyword.type == KEYWORD_POP) {
-    printf("\n//%s@%d\nD=A\n@%s\nA=M+D\nD=A\n@R13\nM=D\n@SP\nM=M-1\nA=M\nD=M\n@R13\nA=M\nM=D\n",
-           command.vm_command, index.token_type.number,
-           memory_segments[segment.token_type.keyword.segment]);
+  if (command->segment == TEMP) {
+    printf("\n//%s@R%d\nD=M\n@SP\nM=M+1\nA=M-1\nM=D\n", command->vm_command, (5 + command->index));
+    return;
   }
+
+  if (command->segment == POINTER) {
+    char *pointers[2] = {"THIS", "THAT"};
+    printf("\n//%s@%s\nD=M\n@SP\nM=D\nM=M+1\n", command->vm_command, pointers[command->index]);
+    return;
+  }
+
+  char *memory_segments[4] = {"LCL", "ARG", "THIS", "THAT"};
+  printf("\n//%s@%d\nD=A\n@%s\nA=M+D\nD=M\n@SP\nM=M+1\nA=M-1\nM=D\n", command->vm_command,
+         command->index, memory_segments[command->segment]);
+}
+
+void writePop(Command *command) {
+  if (command->segment == STATIC) {
+    printf("\n//%s@%d\nD=A\n@SP\nA=M\nM=D\n@SP\nM=M+1\n", command->vm_command, command->index);
+    return;
+  }
+
+  if (command->segment == TEMP) {
+    printf("\n//%s@SP\nM=M-1\nA=M\nD=M\nR%d\nM=D\n", command->vm_command, (5 + command->index));
+    return;
+  }
+
+  if (command->segment == POINTER) {
+    char *pointers[2] = {"THIS", "THAT"};
+    printf("\n//%s@SP\nM=M-1\nA=M\nD=M\n@%s\nM=D\n", command->vm_command, pointers[command->index]);
+    return;
+  }
+
+  char *memory_segments[8] = {"LCL", "ARG", "THIS", "THAT"};
+  printf("\n//%s@%d\nD=A\n@%s\nA=M+D\nD=A\n@R13\nM=D\n@SP\nM=M-1\nA=M\nD=M\n@R13\nA=M\nM=D\n",
+         command->vm_command, command->index, memory_segments[command->segment]);
 }
 
 void writeAritmetic(Token token_command, Command command) {
@@ -272,14 +352,18 @@ int main(int argc, char *argv[]) {
     if (!tokens_num) return 0;
 
     // Parse instruction
-    parsing(tokens, tokens_num, &command);
-
-    // Translate instruction to asembler code for Hack machine
-    if (command.type == C_PUSH_POP) {
-      writePushPop(tokens[0], tokens[1], tokens[2], command);
+    ParseResult result = parsing(tokens, tokens_num, &command);
+    if (result.code == PARSE_ERROR) {
+      printf("%s %s", instruction, result.message);
+      return 1;
     }
 
-    if (command.type == C_ARITHMETIC) {
+    // Translate instruction to asembler code for Hack machine
+    if (command.type == C_PUSH) {
+      writePush(&command);
+    } else if (command.type == C_POP) {
+      writePop(&command);
+    } else if (command.type == C_ARITHMETIC) {
       writeAritmetic(tokens[0], command);
     }
 
