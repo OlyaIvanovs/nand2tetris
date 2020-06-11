@@ -139,6 +139,9 @@ void remove_spaces(char *line) {
   while (line[rc] != '\0') {
     if (isspace(line[rc]) && isspace(line[rc + 1])) {
       rc++;
+    } else if (line[rc] == '/' && line[rc + 1] == '/') {
+      new_line[wc++] = '\n';
+      line[rc] = '\0';
     } else {
       new_line[wc++] = line[rc++];
     }
@@ -218,7 +221,7 @@ ParseResult parse(Token tokens[10], int token_num, Command *command) {
   char *token_purposes[4] = {"MEMORY_ACCESS", "SEGMENT", "INDEX", "MATH"};
 
   // The number of tokens should be < 3
-  if (token_num >= 3) {
+  if (token_num > 3) {
     sprintf(result.message, "!ERROR! The instruction is too long.");
     result.code = PARSE_ERROR;
     return result;
@@ -285,7 +288,6 @@ ParseResult parse(Token tokens[10], int token_num, Command *command) {
 }
 
 void writePush(Command *command) {
-  printf("push");
   if (command->segment == CONSTANT) {
     printf("\n//%s@%d\nD=A\n@SP\nM=M+1\n\nA=M-1\nM=D\n", command->vm_command, command->index);
     return;
@@ -377,7 +379,7 @@ int main(int argc, char *argv[]) {
 
   while (fgets(instruction, MAXLEN, fp) != NULL) {
     remove_spaces(instruction);
-    if (strlen(instruction) == 0) continue;
+    if (strlen(instruction) <= 1) continue;
 
     Command command = {};
     strcpy(command.vm_command, instruction);
