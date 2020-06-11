@@ -27,6 +27,13 @@ typedef enum KeywordType {
 
   KEYWORD_ADD,
   KEYWORD_SUB,
+  KEYWORD_AND,
+  KEYWORD_OR,
+  KEYWORD_NEG,
+  KEYWORD_NOT,
+  KEYWORD_EQ,
+  KEYWORD_GT,
+  KEYWORD_LT,
 
   KEYWORD_LOCAL,
   KEYWORD_ARGUMENT,
@@ -60,11 +67,17 @@ typedef enum MemorySegment {
   TEMP
 } MemorySegment;
 
-typedef enum MathCommands {
+typedef enum MathCommand {
   ADD,
   SUB,
-
-} MathCommands;
+  AND,
+  OR,
+  NEG,  // unary
+  NOT,
+  EQ,  // CMP
+  GT,
+  LT
+} MathCommand;
 
 typedef enum ParseResultCode {
   PARSE_ERROR,
@@ -79,6 +92,9 @@ typedef struct Command {
   MemorySegment segment;
   int index;
 
+  // for math
+  MathCommand math;
+
   char vm_command[MAXLEN];  // for comments
   char asm_command[MAXLEN];
 } Command;
@@ -90,7 +106,7 @@ typedef struct Keyword {
   TokenPurpose purpose;
   TokenPurpose next_token_purpose;
   MemorySegment segment;
-  MathCommands command;
+  MathCommand command;
 } Keyword;
 
 typedef struct Token {
@@ -134,7 +150,7 @@ void remove_spaces(char *line) {
 
 // Return size of array with tokens, 0 if the order of tokens is wrong
 int tokenize(char *line, Token *tokens) {
-  Keyword keywords[12] = {
+  Keyword keywords[19] = {
       {"pop", KEYWORD_POP, MEMORY_ACCESS, SEGMENT, 0, 0},
       {"push", KEYWORD_PUSH, MEMORY_ACCESS, SEGMENT, 0, 0},
 
@@ -149,6 +165,13 @@ int tokenize(char *line, Token *tokens) {
 
       {"add", KEYWORD_ADD, MATH, 0, 0, ADD},
       {"sub", KEYWORD_SUB, MATH, 0, 0, SUB},
+      {"and", KEYWORD_AND, MATH, 0, 0, AND},
+      {"or", KEYWORD_OR, MATH, 0, 0, OR},
+      {"neg", KEYWORD_NEG, MATH, 0, 0, NEG},
+      {"not", KEYWORD_NOT, MATH, 0, 0, NOT},
+      {"eq", KEYWORD_EQ, MATH, 0, 0, EQ},
+      {"gt", KEYWORD_GT, MATH, 0, 0, GT},
+      {"lt", KEYWORD_LT, MATH, 0, 0, LT},
   };
 
   char word[MAXLEN];
@@ -175,6 +198,7 @@ int tokenize(char *line, Token *tokens) {
         }
         if (k == 0) {
           tokens->purpose = INDEX;
+          tokens->next_token_purpose = 0;
           tokens->token_type.number = atoi(word);
           token_num++;
         }
@@ -189,12 +213,22 @@ int tokenize(char *line, Token *tokens) {
   return token_num;
 }
 
-ParseResult parsing(Token tokens[10], int token_num, Command *command) {
+ParseResult parse(Token tokens[10], int token_num, Command *command) {
   ParseResult result = {};
   char *token_purposes[4] = {"MEMORY_ACCESS", "SEGMENT", "INDEX", "MATH"};
 
+  // The number of tokens should be < 3
+  if (token_num >= 3) {
+    sprintf(result.message, "!ERROR! The instruction is too long.");
+    result.code = PARSE_ERROR;
+    return result;
+  }
+
   // Check if number of tokens is correct
-  if (tokens[0].purpose == MEMORY_ACCESS && token_num != 3) {
+  if (tokens[0].purpose == MEMORY_ACCESS && token_num < 3) {
+    sprintf(result.message, "!ERROR! There should be 2 arguments(segment and index)");
+    result.code = PARSE_ERROR;
+    return result;
   }
 
   // Check if the order of tokens is correct
@@ -224,7 +258,7 @@ ParseResult parsing(Token tokens[10], int token_num, Command *command) {
     }
 
     if (command->segment == TEMP && (command->index > 7)) {
-      sprintf(result.message, "!ERROR! Index should be <= 7");
+      sprintf(result.message, "!ERROR! Index for temp segment should be <= 7");
       result.code = PARSE_ERROR;
       return result;
     }
@@ -237,7 +271,12 @@ ParseResult parsing(Token tokens[10], int token_num, Command *command) {
   }
 
   if (tokens[0].purpose == MATH) {
+    if (token_num > 1) {
+      sprintf(result.message, "!ERROR! The instruction too long.");
+      result.code = PARSE_ERROR;
+    }
     command->type = C_ARITHMETIC;
+    command->math = tokens[0].token_type.keyword.command;
   }
 
   result.code = PARSE_SUCCESS;
@@ -295,11 +334,17 @@ void writePop(Command *command) {
          command->vm_command, command->index, memory_segments[command->segment]);
 }
 
-void writeAritmetic(Token token_command, Command command) {
-  // ADD, SUB
-  char *diff[2] = {"M=M+D", "M=M-D"};
-  printf("\n//%s@SP\nAM=M-1\nD=M\nA=A-1\n%s\n", command.vm_command,
-         diff[token_command.token_type.keyword.command]);
+void writeArithmetic(Token token_command, Command command) {
+  // ADD, SUB, AND, OR, NEG, NOT
+  char *diff[6] = {"D+M", "M-D", "D&M", "D|M", "-M", "!M"};
+
+  if (command.math <= 3) {  // ADD, SUB, AND, OR
+    printf("\n//%s@SP\nAM=M-1\nD=M\nA=A-1\nM=%s\n", command.vm_command, diff[command.math]);
+  } else if (command.math > 5) {  // EQ, GT, LT
+
+  } else if (command.math == NEG || command.math == NOT) {  // Unary
+    printf("\n//%s@SP\nA=M-1\nD=M\nM=%s\n", command.vm_command, diff[command.math]);
+  }
 }
 
 // ======================================= Main Loop=============================================//
@@ -343,19 +388,19 @@ int main(int argc, char *argv[]) {
     if (!tokens_num) return 0;
 
     // Parse instruction
-    ParseResult result = parsing(tokens, tokens_num, &command);
+    ParseResult result = parse(tokens, tokens_num, &command);
     if (result.code == PARSE_ERROR) {
       printf("%s %s", instruction, result.message);
       return 1;
     }
 
-    // Translate instruction to asembler code for Hack machine
+    // Translate instruction to assembler code for Hack machine
     if (command.type == C_PUSH) {
       writePush(&command);
     } else if (command.type == C_POP) {
       writePop(&command);
     } else if (command.type == C_ARITHMETIC) {
-      writeAritmetic(tokens[0], command);
+      writeArithmetic(tokens[0], command);
     }
 
     // fprintf(fpasm, "%s\n", command.asm_commands);
