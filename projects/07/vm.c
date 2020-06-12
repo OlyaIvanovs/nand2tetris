@@ -87,6 +87,7 @@ typedef enum ParseResultCode {
 
 typedef struct Command {
   CommandsType type;
+  int num_line;  // order nummer of instruction in file
 
   // for push, pop
   MemorySegment segment;
@@ -96,7 +97,7 @@ typedef struct Command {
   MathCommand math;
 
   char vm_command[MAXLEN];  // for comments
-  char asm_command[MAXLEN];
+  char asm_commands[200];
 } Command;
 
 typedef struct Keyword {
@@ -139,7 +140,7 @@ void remove_spaces(char *line) {
   while (line[rc] != '\0') {
     if (isspace(line[rc]) && isspace(line[rc + 1])) {
       rc++;
-    } else if (line[rc] == '/' && line[rc + 1] == '/') {
+    } else if (line[rc] == '/' && line[rc + 1] == '/') {  // ignore comments
       new_line[wc++] = '\n';
       line[rc] = '\0';
     } else {
@@ -222,14 +223,14 @@ ParseResult parse(Token tokens[10], int token_num, Command *command) {
 
   // The number of tokens should be < 3
   if (token_num > 3) {
-    sprintf(result.message, "!ERROR! The instruction is too long.");
+    sprintf(result.message, "The instruction is too long.");
     result.code = PARSE_ERROR;
     return result;
   }
 
   // Check if number of tokens is correct
   if (tokens[0].purpose == MEMORY_ACCESS && token_num < 3) {
-    sprintf(result.message, "!ERROR! There should be 2 arguments(segment and index)");
+    sprintf(result.message, "There should be 2 arguments(segment and index)");
     result.code = PARSE_ERROR;
     return result;
   }
@@ -237,7 +238,7 @@ ParseResult parse(Token tokens[10], int token_num, Command *command) {
   // Check if the order of tokens is correct
   for (int i = token_num - 1; i > 0; i--) {
     if ((i > 1) && (tokens[i].purpose != tokens[i - 1].next_token_purpose)) {
-      sprintf(result.message, "!ERROR! Next Token should be %s",
+      sprintf(result.message, "Next Token should be %s",
               token_purposes[tokens[i - 1].next_token_purpose]);
       result.code = PARSE_ERROR;
       return result;
@@ -255,19 +256,19 @@ ParseResult parse(Token tokens[10], int token_num, Command *command) {
     command->index = tokens[2].token_type.number;
 
     if (command->index < 0) {
-      sprintf(result.message, "!ERROR! Index should be > 0");
+      sprintf(result.message, "Index should be > 0");
       result.code = PARSE_ERROR;
       return result;
     }
 
     if (command->segment == TEMP && (command->index > 7)) {
-      sprintf(result.message, "!ERROR! Index for temp segment should be <= 7");
+      sprintf(result.message, "Index for temp segment should be <= 7");
       result.code = PARSE_ERROR;
       return result;
     }
 
     if (command->segment == POINTER && (command->index > 1)) {
-      sprintf(result.message, "!ERROR! Index for pointer segment should be 0 or 1");
+      sprintf(result.message, "Index for pointer segment should be 0 or 1");
       result.code = PARSE_ERROR;
       return result;
     }
@@ -275,7 +276,7 @@ ParseResult parse(Token tokens[10], int token_num, Command *command) {
 
   if (tokens[0].purpose == MATH) {
     if (token_num > 1) {
-      sprintf(result.message, "!ERROR! The instruction too long.");
+      sprintf(result.message, "The instruction too long.");
       result.code = PARSE_ERROR;
     }
     command->type = C_ARITHMETIC;
@@ -289,67 +290,82 @@ ParseResult parse(Token tokens[10], int token_num, Command *command) {
 
 void writePush(Command *command) {
   if (command->segment == CONSTANT) {
-    printf("\n//%s@%d\nD=A\n@SP\nM=M+1\n\nA=M-1\nM=D\n", command->vm_command, command->index);
+    sprintf(command->asm_commands, "\n//%s@%d\nD=A\n@SP\nM=M+1\nA=M-1\nM=D\n", command->vm_command,
+            command->index);
     return;
   }
 
   if (command->segment == STATIC) {
-    printf("\n//%s@%d\nD=A\n@SP\nA=M\nM=D\n@SP\nM=M+1\n", command->vm_command, command->index);
+    sprintf(command->asm_commands, "\n//%s@%d\nD=A\n@SP\nA=M\nM=D\n@SP\nM=M+1\n",
+            command->vm_command, command->index);
     return;
   }
 
   if (command->segment == TEMP) {
-    printf("\n//%s@R%d\nD=M\n@SP\nM=M+1\nA=M-1\nM=D\n", command->vm_command, (5 + command->index));
+    sprintf(command->asm_commands, "\n//%s@R%d\nD=M\n@SP\nM=M+1\nA=M-1\nM=D\n", command->vm_command,
+            (5 + command->index));
     return;
   }
 
   if (command->segment == POINTER) {
     char *pointers[2] = {"THIS", "THAT"};
-    printf("\n//%s@%s\nD=M\n@SP\nM=D\nM=M+1\n", command->vm_command, pointers[command->index]);
+    sprintf(command->asm_commands, "\n//%s@%s\nD=M\n@SP\nM=D\nM=M+1\n", command->vm_command,
+            pointers[command->index]);
     return;
   }
 
   char *memory_segments[4] = {"LCL", "ARG", "THIS", "THAT"};
-  printf("\n//%s@%d\nD=A\n@%s\nA=M+D\nD=M\n@SP\nM=M+1\nA=M-1\nM=D\n", command->vm_command,
-         command->index, memory_segments[command->segment]);
+  sprintf(command->asm_commands, "\n//%s@%d\nD=A\n@%s\nA=M+D\nD=M\n@SP\nM=M+1\nA=M-1\nM=D\n",
+          command->vm_command, command->index, memory_segments[command->segment]);
 }
 
 void writePop(Command *command) {
   if (command->segment == STATIC) {
-    printf("\n//%s@%d\nD=A\n@SP\nA=M\nM=D\n@SP\nM=M+1\n", command->vm_command, command->index);
+    sprintf(command->asm_commands, "\n//%s@%d\nD=A\n@SP\nA=M\nM=D\n@SP\nM=M+1\n",
+            command->vm_command, command->index);
     return;
   }
 
   if (command->segment == TEMP) {
-    printf("\n//%s@SP\nM=M-1\nA=M\nD=M\nR%d\nM=D\n", command->vm_command, (5 + command->index));
+    sprintf(command->asm_commands, "\n//%s@SP\nM=M-1\nA=M\nD=M\nR%d\nM=D\n", command->vm_command,
+            (5 + command->index));
     return;
   }
 
   if (command->segment == POINTER) {
     char *pointers[2] = {"THIS", "THAT"};
-    printf("\n//%s@SP\nM=M-1\nA=M\nD=M\n@%s\nM=D\n", command->vm_command, pointers[command->index]);
+    sprintf(command->asm_commands, "\n//%s@SP\nM=M-1\nA=M\nD=M\n@%s\nM=D\n", command->vm_command,
+            pointers[command->index]);
     return;
   }
 
   char *memory_segments[8] = {"LCL", "ARG", "THIS", "THAT"};
-  printf("\n//%s@%d\nD=A\n@%s\nA=M+D\nD=A\n@R13\nM=D\n@SP\nM=M-1\nA=M\nD=M\n@R13\nA=M\nM=D\n",
-         command->vm_command, command->index, memory_segments[command->segment]);
+  sprintf(command->asm_commands,
+          "\n//%s@%d\nD=A\n@%s\nA=M+D\nD=A\n@R13\nM=D\n@SP\nM=M-1\nA=M\nD=M\n@R13\nA=M\nM=D\n",
+          command->vm_command, command->index, memory_segments[command->segment]);
 }
 
-void writeArithmetic(Token token_command, Command command) {
+void writeArithmetic(Command *command) {
   // ADD, SUB, AND, OR, NEG, NOT
-  char *diff[6] = {"D+M", "M-D", "D&M", "D|M", "-M", "!M"};
+  char *diff[9] = {"D+M", "M-D", "D&M", "D|M", "-M", "!M", "JEQ", "JGT", "JLT"};
 
-  if (command.math <= 3) {  // ADD, SUB, AND, OR
-    printf("\n//%s@SP\nAM=M-1\nD=M\nA=A-1\nM=%s\n", command.vm_command, diff[command.math]);
-  } else if (command.math > 5) {  // EQ, GT, LT
-
-  } else if (command.math == NEG || command.math == NOT) {  // Unary
-    printf("\n//%s@SP\nA=M-1\nD=M\nM=%s\n", command.vm_command, diff[command.math]);
+  if (command->math <= 3) {  // ADD, SUB, AND, OR
+    sprintf(command->asm_commands, "\n//%s@SP\nAM=M-1\nD=M\nA=A-1\nM=%s\n", command->vm_command,
+            diff[command->math]);
+  } else if (command->math > 5) {  // EQ, GT, LT
+    sprintf(command->asm_commands,
+            "\n//"
+            "%s@SP\nAM=M-1\nD=M\nA=A-1\nD=D-M\n@IF_%s_%d\nD;%s\n@SP\nA=M-1\nM=0\n@CONTINUE_%d\n0;"
+            "JMP\n(IF_%s_%d)\n@SP\nA=M-1\nM=-1\n(CONTINUE_%d)",
+            command->vm_command, diff[command->math], command->num_line, diff[command->math],
+            command->num_line, diff[command->math], command->num_line, command->num_line);
+  } else if (command->math == NEG || command->math == NOT) {  // Unary
+    sprintf(command->asm_commands, "\n//%s@SP\nA=M-1\nD=M\nM=%s\n", command->vm_command,
+            diff[command->math]);
   }
 }
 
-// ======================================= Main Loop=============================================//
+// ======================================= Main ====================================================
 
 // Input fileName.vm , Output fileName.asm
 int main(int argc, char *argv[]) {
@@ -376,12 +392,14 @@ int main(int argc, char *argv[]) {
   }
 
   char instruction[MAXLEN];
+  int num_line = 0;
 
   while (fgets(instruction, MAXLEN, fp) != NULL) {
     remove_spaces(instruction);
     if (strlen(instruction) <= 1) continue;
 
     Command command = {};
+    command.num_line = num_line++;
     strcpy(command.vm_command, instruction);
 
     // Tokenize instruction
@@ -392,7 +410,7 @@ int main(int argc, char *argv[]) {
     // Parse instruction
     ParseResult result = parse(tokens, tokens_num, &command);
     if (result.code == PARSE_ERROR) {
-      printf("%s %s", instruction, result.message);
+      printf("\nError in line %d: %s%s.", command.num_line, instruction, result.message);
       return 1;
     }
 
@@ -402,10 +420,10 @@ int main(int argc, char *argv[]) {
     } else if (command.type == C_POP) {
       writePop(&command);
     } else if (command.type == C_ARITHMETIC) {
-      writeArithmetic(tokens[0], command);
+      writeArithmetic(&command);
     }
 
-    // fprintf(fpasm, "%s\n", command.asm_commands);
+    fprintf(fpasm, "%s\n", command.asm_commands);
   }
 
   fclose(fp);
