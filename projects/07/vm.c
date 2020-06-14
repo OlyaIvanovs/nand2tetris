@@ -370,24 +370,30 @@ void writeArithmetic(Command *command) {
 // Input fileName.vm , Output fileName.asm
 int main(int argc, char *argv[]) {
   // File with code to translate
-  char file_name[MAXLEN];
+  char file_name_to_read[MAXLEN];
+  char file_name_to_write[MAXLEN];
   if (argc != 2) {
     printf("Usage: ./vm filename");
     return 1;
   } else {
-    strcpy(file_name, argv[1]);
+    strcpy(file_name_to_read, argv[1]);
   }
 
   FILE *fp;     // from
   FILE *fpasm;  // to
 
-  if ((fpasm = fopen("machine_code.asm", "w")) == NULL) {
-    printf("Error: can't open file 'machine_code.asm'\n");
+  if ((fp = fopen(file_name_to_read, "r")) == NULL) {
+    printf("Error: can't open file %s\n", file_name_to_read);
     return 1;
   }
 
-  if ((fp = fopen(file_name, "r")) == NULL) {
-    printf("Error: can't open file %s\n", file_name);
+  // The name of output file is the same as the name of file to read
+  int size_filename = strrchr(file_name_to_read, '.') - file_name_to_read;
+  strncpy(file_name_to_write, file_name_to_read, size_filename);
+  strcat(file_name_to_write, ".asm");
+
+  if ((fpasm = fopen(file_name_to_write, "w")) == NULL) {
+    printf("Error: can't open file %s\n", file_name_to_write);
     return 1;
   }
 
