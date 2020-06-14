@@ -96,7 +96,8 @@ typedef struct Command {
   // for math
   MathCommand math;
 
-  char vm_command[MAXLEN];  // for comments
+  char vm_command[MAXLEN];   // for comments
+  char static_name[MAXLEN];  // for static variables names
   char asm_commands[200];
 } Command;
 
@@ -296,8 +297,8 @@ void writePush(Command *command) {
   }
 
   if (command->segment == STATIC) {
-    sprintf(command->asm_commands, "\n//%s@%d\nD=A\n@SP\nA=M\nM=D\n@SP\nM=M+1\n",
-            command->vm_command, command->index);
+    sprintf(command->asm_commands, "\n//%s@%s.%d\nD=M\n@SP\nM=M+1\nA=M-1\nM=D\n",
+            command->vm_command, command->static_name, command->index);
     return;
   }
 
@@ -309,7 +310,7 @@ void writePush(Command *command) {
 
   if (command->segment == POINTER) {
     char *pointers[2] = {"THIS", "THAT"};
-    sprintf(command->asm_commands, "\n//%s@%s\nD=M\n@SP\nM=D\nM=M+1\n", command->vm_command,
+    sprintf(command->asm_commands, "\n//%s@%s\nD=M\n@SP\nM=M+1\nA=M-1\nM=D\n", command->vm_command,
             pointers[command->index]);
     return;
   }
@@ -321,20 +322,20 @@ void writePush(Command *command) {
 
 void writePop(Command *command) {
   if (command->segment == STATIC) {
-    sprintf(command->asm_commands, "\n//%s@%d\nD=A\n@SP\nA=M\nM=D\n@SP\nM=M+1\n",
-            command->vm_command, command->index);
+    sprintf(command->asm_commands, "\n//%s@SP\nM=M-1\nA=M\nD=M\n@%s.%d\nM=D\n", command->vm_command,
+            command->static_name, command->index);
     return;
   }
 
   if (command->segment == TEMP) {
-    sprintf(command->asm_commands, "\n//%s@SP\nM=M-1\nA=M\nD=M\nR%d\nM=D\n", command->vm_command,
+    sprintf(command->asm_commands, "\n//%s@SP\nM=M-1\nA=M\nD=M\n@R%d\nM=D\n", command->vm_command,
             (5 + command->index));
     return;
   }
 
   if (command->segment == POINTER) {
     char *pointers[2] = {"THIS", "THAT"};
-    sprintf(command->asm_commands, "\n//%s@SP\nM=M-1\nA=M\nD=M\n@%s\nM=D\n", command->vm_command,
+    sprintf(command->asm_commands, "\n//%s@SP\nAM=M-1\nD=M\n@%s\nM=D\n", command->vm_command,
             pointers[command->index]);
     return;
   }
@@ -355,7 +356,7 @@ void writeArithmetic(Command *command) {
   } else if (command->math > 5) {  // EQ, GT, LT
     sprintf(command->asm_commands,
             "\n//"
-            "%s@SP\nAM=M-1\nD=M\nA=A-1\nD=D-M\n@IF_%s_%d\nD;%s\n@SP\nA=M-1\nM=0\n@CONTINUE_%d\n0;"
+            "%s@SP\nAM=M-1\nD=M\nA=A-1\nD=M-D\n@IF_%s_%d\nD;%s\n@SP\nA=M-1\nM=0\n@CONTINUE_%d\n0;"
             "JMP\n(IF_%s_%d)\n@SP\nA=M-1\nM=-1\n(CONTINUE_%d)",
             command->vm_command, diff[command->math], command->num_line, diff[command->math],
             command->num_line, diff[command->math], command->num_line, command->num_line);
@@ -388,9 +389,17 @@ int main(int argc, char *argv[]) {
   }
 
   // The name of output file is the same as the name of file to read
+  // The beginning for static variables names
+  char static_filename[MAXLEN];
   int size_filename = strrchr(file_name_to_read, '.') - file_name_to_read;
-  strncpy(file_name_to_write, file_name_to_read, size_filename);
-  strcat(file_name_to_write, ".asm");
+  strncpy(file_name_to_write, file_name_to_read, size_filename + 1);
+  file_name_to_write[size_filename + 1] = '\0';
+
+  int k = strrchr(file_name_to_write, '/') - file_name_to_write + 1;
+  for (int i = k, j = 0; file_name_to_write[i] != '.'; i++, j++) {
+    static_filename[j] = file_name_to_write[i];
+  }
+  strncat(file_name_to_write, "asm", 3);
 
   if ((fpasm = fopen(file_name_to_write, "w")) == NULL) {
     printf("Error: can't open file %s\n", file_name_to_write);
@@ -407,6 +416,7 @@ int main(int argc, char *argv[]) {
     Command command = {};
     command.num_line = num_line++;
     strcpy(command.vm_command, instruction);
+    strcpy(command.static_name, static_filename);
 
     // Tokenize instruction
     Token tokens[10];
