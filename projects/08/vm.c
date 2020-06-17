@@ -47,6 +47,7 @@ typedef enum KeywordType {
   KEYWORD_GOTO,
   KEYWORD_FUNCTION,
   KEYWORD_RETURN,
+  KEYWORD_CALL,
 } KeywordType;
 
 typedef enum TokenPurpose {
@@ -57,7 +58,7 @@ typedef enum TokenPurpose {
   NAME,
   FLOW,
   FUNCTION,
-  RETURN
+  RETURN,
 } TokenPurpose;
 
 typedef enum MemorySegment {
@@ -86,7 +87,6 @@ typedef enum MathCommand {
 typedef enum ParseResultCode {
   PARSE_ERROR,
   PARSE_SUCCESS,
-
 } ParseResultCode;
 
 typedef struct Command {
@@ -96,21 +96,17 @@ typedef struct Command {
   // for push, pop
   MemorySegment segment;
   int index;
-
   // for math
   MathCommand math;
-
   // for label and function
   char name[MAXLEN];
-
   char vm_command[MAXLEN];   // for comments
   char static_name[MAXLEN];  // for static variables names
-  char asm_commands[200];
+  char asm_commands[400];
 } Command;
 
 typedef struct Keyword {
   char *string;
-
   KeywordType type;
   TokenPurpose purpose;
   TokenPurpose next_token_purpose;
@@ -162,7 +158,7 @@ void remove_spaces(char *line) {
 
 // Return size of array with tokens, 0 if the order of tokens is wrong
 int tokenize(char *line, Token *tokens) {
-  Keyword keywords[24] = {
+  Keyword keywords[25] = {
       {"pop", KEYWORD_POP, MEMORY_ACCESS, SEGMENT, 0, 0},
       {"push", KEYWORD_PUSH, MEMORY_ACCESS, SEGMENT, 0, 0},
 
@@ -190,6 +186,7 @@ int tokenize(char *line, Token *tokens) {
       {"goto", KEYWORD_GOTO, FLOW, NAME, 0, 0},
       {"function", KEYWORD_FUNCTION, FUNCTION, NAME, 0, 0},
       {"return", KEYWORD_RETURN, RETURN, 0, 0, 0},
+      {"call", KEYWORD_CALL, FUNCTION, NAME, 0, 0},
   };
 
   char word[MAXLEN];
@@ -237,7 +234,6 @@ int tokenize(char *line, Token *tokens) {
         }
       }
     }
-
     // remove spaces
     while (isspace(*line++))
       ;
@@ -248,9 +244,8 @@ int tokenize(char *line, Token *tokens) {
 
 ParseResult parse(Token tokens[10], int token_num, Command *command) {
   ParseResult result = {};
-  char *token_purposes[8] = {"MEMORY_ACCESS", "SEGMENT", "INDEX",    "MATH",
+  char *token_purposes[9] = {"MEMORY_ACCESS", "SEGMENT", "INDEX",    "MATH",
                              "NAME",          "FLOW",    "FUNCTION", "RETURN"};
-
   // The number of tokens should be < 3
   if (token_num > 3) {
     sprintf(result.message, "The instruction is too long.");
@@ -270,7 +265,7 @@ ParseResult parse(Token tokens[10], int token_num, Command *command) {
 
   if (tokens[0].purpose == MEMORY_ACCESS || tokens[0].purpose == FUNCTION) {
     if (token_num != 3) {
-      sprintf(result.message, "There should be 2 arguments(segment and index)");
+      sprintf(result.message, "There should be 2 arguments");
       result.code = PARSE_ERROR;
       return result;
     }
@@ -317,7 +312,12 @@ ParseResult parse(Token tokens[10], int token_num, Command *command) {
   }
 
   if (tokens[0].purpose == FUNCTION) {
-    command->type = C_FUNCTION;
+    if (tokens[0].token_type.keyword.type == KEYWORD_FUNCTION) {
+      command->type = C_FUNCTION;
+    } else if (tokens[0].token_type.keyword.type == KEYWORD_CALL) {
+      command->type = C_CALL;
+    }
+
     strncpy(command->name, tokens[1].token_type.text, MAXLEN);
     command->index = tokens[2].token_type.number;
   }
@@ -333,6 +333,7 @@ ParseResult parse(Token tokens[10], int token_num, Command *command) {
       result.code = PARSE_ERROR;
       return result;
     }
+
     if (tokens[0].token_type.keyword.type == KEYWORD_LABEL) {
       command->type = C_LABEL;
     } else if (tokens[0].token_type.keyword.type == KEYWORD_IF) {
@@ -344,7 +345,6 @@ ParseResult parse(Token tokens[10], int token_num, Command *command) {
   }
 
   result.code = PARSE_SUCCESS;
-
   return result;
 }
 
@@ -440,7 +440,7 @@ void writeGoto(Command *command) {
 }
 
 void writeFunction(Command *command) {
-  char line[200];
+  char line[400];
   sprintf(line, "\n//%s(%s)\n", command->vm_command, command->name);
   for (int i = 0; i < command->index; i++) {
     strcat(line, "\n@SP\nM=M+1\nA=M-1\nM=0\n");  // push 0
@@ -461,6 +461,22 @@ void writeReturn(Command *command) {
           "//LCL=*(FRAME-4)\n@4\nD=A\n@LCL\nA=M-D\nD=M\n@LCL\nM=D\n"
           "// goto Return\n@R13\nA=M\n0;JMP\n",
           command->vm_command);
+}
+
+void writeCall(Command *command) {
+  sprintf(command->asm_commands,
+          "\n//%s"
+          "//push return address\n@%s$RETURN\nD=A\n@SP\nM=M+1\nA=M-1\nM=D\n"
+          "//push LCL\n@LCL\nD=M\n@SP\nM=M+1\nA=M-1\nM=D\n"
+          "//push ARG\n@ARG\nD=M\n@SP\nM=M+1\nA=M-1\nM=D\n"
+          "//push THIS\n@THIS\nD=M\n@SP\nM=M+1\nA=M-1\nM=D\n"
+          "//push THAT\n@THAT\nD=M\n@SP\nM=M+1\nA=M-1\nM=D\n"
+          "//ARG = SP-5-n\n@%d\nD=A\n@5\nD=D+A\n@SP\nD=M-D\n@ARG\nM=D\n"
+          "//LCL = SP\n@SP\nD=M\n@LCL\nM=D\n"
+          "//Goto function\n@%s\n0;JMP"
+          "//Label for return address\n(%s$RETURN)\n",
+          command->vm_command, command->name, command->index, command->name, command->name);
+  // command->vm_command, command->name);
 }
 
 // ======================================= Main ==================================================
@@ -520,6 +536,10 @@ int main(int argc, char *argv[]) {
     int tokens_num = tokenize(instruction, &tokens[0]);
     if (!tokens_num) return 0;
 
+    // for (int i = 0; i < 3; i++) {
+    //   printf("%d ", tokens[i].purpose);
+    // }
+
     // Parse instruction
     ParseResult result = parse(tokens, tokens_num, &command);
     if (result.code == PARSE_ERROR) {
@@ -544,6 +564,9 @@ int main(int argc, char *argv[]) {
       writeFunction(&command);
     } else if (command.type == C_RETURN) {
       writeReturn(&command);
+    } else if (command.type == C_CALL) {
+      // printf("call %s %d", command.name, command.index);
+      writeCall(&command);
     } else {
     }
 
