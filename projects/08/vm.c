@@ -466,7 +466,7 @@ void writeReturn(Command *command) {
 void writeCall(Command *command) {
   sprintf(command->asm_commands,
           "\n//%s"
-          "//push return address\n@%s$RETURN\nD=A\n@SP\nM=M+1\nA=M-1\nM=D\n"
+          "//push return address\n@%s$RETURN_%d\nD=A\n@SP\nM=M+1\nA=M-1\nM=D\n"
           "//push LCL\n@LCL\nD=M\n@SP\nM=M+1\nA=M-1\nM=D\n"
           "//push ARG\n@ARG\nD=M\n@SP\nM=M+1\nA=M-1\nM=D\n"
           "//push THIS\n@THIS\nD=M\n@SP\nM=M+1\nA=M-1\nM=D\n"
@@ -474,8 +474,9 @@ void writeCall(Command *command) {
           "//ARG = SP-5-n\n@%d\nD=A\n@5\nD=D+A\n@SP\nD=M-D\n@ARG\nM=D\n"
           "//LCL = SP\n@SP\nD=M\n@LCL\nM=D\n"
           "//Goto function\n@%s\n0;JMP"
-          "//Label for return address\n(%s$RETURN)\n",
-          command->vm_command, command->name, command->index, command->name, command->name);
+          "//Label for return address\n(%s$RETURN_%d)\n",
+          command->vm_command, command->name, command->num_line, command->index, command->name,
+          command->name, command->num_line);
   // command->vm_command, command->name);
 }
 
@@ -483,97 +484,108 @@ void writeCall(Command *command) {
 
 // Input fileName.vm , Output fileName.asm
 int main(int argc, char *argv[]) {
+  if (argc < 2) {
+    printf("Usage: ./vm filenames");
+    return 1;
+  }
+
   // File with code to translate
   char file_name_to_read[MAXLEN];
   char file_name_to_write[MAXLEN];
-  if (argc != 2) {
-    printf("Usage: ./vm filename");
-    return 1;
-  } else {
-    strcpy(file_name_to_read, argv[1]);
-  }
+  char file_name_to_write_h[MAXLEN];  // helper
 
-  FILE *fp;     // from
-  FILE *fpasm;  // to
+  // The name of output file is the same as the name of directory
+  int s = strrchr(argv[1], '/') - argv[1];
+  strncpy(file_name_to_write, argv[1], s);
+  file_name_to_write[s] = '\0';
+  strcpy(file_name_to_write_h, strrchr(file_name_to_write, '/') + 1);
+  sprintf(file_name_to_write, "%s/%s.asm", file_name_to_write, file_name_to_write_h);
 
-  if ((fp = fopen(file_name_to_read, "r")) == NULL) {
-    printf("Error: can't open file %s\n", file_name_to_read);
-    return 1;
-  }
-
-  // The name of output file is the same as the name of file to read
-  int size_filename = strrchr(file_name_to_read, '.') - file_name_to_read;
-  strncpy(file_name_to_write, file_name_to_read, size_filename + 1);
-  file_name_to_write[size_filename + 1] = '\0';
-
-  // For static variables names
-  char static_filename[MAXLEN];
-  int k = strrchr(file_name_to_write, '/') - file_name_to_write + 1;
-  for (int i = k, j = 0; file_name_to_write[i] != '.'; i++, j++) {
-    static_filename[j] = file_name_to_write[i];
-  }
-  strncat(file_name_to_write, "asm", 3);
-
+  FILE *fpasm;  // file to write
   if ((fpasm = fopen(file_name_to_write, "w")) == NULL) {
     printf("Error: can't open file %s\n", file_name_to_write);
     return 1;
   }
 
+  // Bootstrap code
+  fprintf(fpasm,
+          "//Bootstrap code\n@256\nD=A\n@SP\nM=D\n"
+          "//call Sys.init\n"
+          "//push return address\n@0\nD=A\n@SP\nM=M+1\nA=M-1\nM=D\n"
+          "//push LCL\n@LCL\nD=M\n@SP\nM=M+1\nA=M-1\nM=D\n"
+          "//push ARG\n@ARG\nD=M\n@SP\nM=M+1\nA=M-1\nM=D\n"
+          "//push THIS\n@THIS\nD=M\n@SP\nM=M+1\nA=M-1\nM=D\n"
+          "//push THAT\n@THAT\nD=M\n@SP\nM=M+1\nA=M-1\nM=D\n"
+          // "//ARG = SP-5\n@5\nD=A\n@SP\nD=M-D\n@ARG\nM=D\n"
+          "// ARG = SP-n-5\n@SP\nD=M\n@0\nD=D-A\n@5\nD=D-A\n@ARG\nM=D\n"
+          "//LCL = SP\n@SP\nD=M\n@LCL\nM=D\n"
+          "//Goto function\n@Sys.init\n0;JMP\n");
+
+  FILE *fp;  // file to read
   char instruction[MAXLEN];
-  int num_line = 0;
 
-  while (fgets(instruction, MAXLEN, fp) != NULL) {
-    remove_spaces(instruction);
-    if (strlen(instruction) <= 1) continue;
-
-    Command command = {};
-    command.num_line = num_line++;
-    strcpy(command.vm_command, instruction);
-    strcpy(command.static_name, static_filename);
-
-    // Tokenize instruction
-    Token tokens[10];
-    int tokens_num = tokenize(instruction, &tokens[0]);
-    if (!tokens_num) return 0;
-
-    // for (int i = 0; i < 3; i++) {
-    //   printf("%d ", tokens[i].purpose);
-    // }
-
-    // Parse instruction
-    ParseResult result = parse(tokens, tokens_num, &command);
-    if (result.code == PARSE_ERROR) {
-      printf("\nError in line %d: %s%s.", command.num_line, instruction, result.message);
+  for (int i = 1; i < argc; i++) {
+    strcpy(file_name_to_read, argv[i]);
+    if ((fp = fopen(file_name_to_read, "r")) == NULL) {
+      printf("Error: can't open file %s\n", file_name_to_read);
       return 1;
     }
 
-    // Translate instruction to assembler code for Hack machine
-    if (command.type == C_PUSH) {
-      writePush(&command);
-    } else if (command.type == C_POP) {
-      writePop(&command);
-    } else if (command.type == C_ARITHMETIC) {
-      writeArithmetic(&command);
-    } else if (command.type == C_LABEL) {
-      writeLabel(&command);
-    } else if (command.type == C_IF) {
-      writeIf(&command);
-    } else if (command.type == C_GOTO) {
-      writeGoto(&command);
-    } else if (command.type == C_FUNCTION) {
-      writeFunction(&command);
-    } else if (command.type == C_RETURN) {
-      writeReturn(&command);
-    } else if (command.type == C_CALL) {
-      // printf("call %s %d", command.name, command.index);
-      writeCall(&command);
-    } else {
+    // For static variables names
+    char static_filename[MAXLEN];
+    int k = strrchr(file_name_to_read, '/') - file_name_to_read + 1;
+    for (int i = k, j = 0; file_name_to_read[i] != '.'; i++, j++) {
+      static_filename[j] = file_name_to_read[i];
     }
 
-    fprintf(fpasm, "%s\n", command.asm_commands);
+    int num_line = 0;
+    while (fgets(instruction, MAXLEN, fp) != NULL) {
+      remove_spaces(instruction);
+      if (strlen(instruction) <= 1) continue;
+
+      Command command = {};
+      command.num_line = num_line++;
+      strcpy(command.vm_command, instruction);
+      strcpy(command.static_name, static_filename);
+
+      // Tokenize instruction
+      Token tokens[10];
+      int tokens_num = tokenize(instruction, &tokens[0]);
+      if (!tokens_num) return 0;
+
+      // Parse instruction
+      ParseResult result = parse(tokens, tokens_num, &command);
+      if (result.code == PARSE_ERROR) {
+        printf("\nError in line %d: %s%s.", command.num_line, instruction, result.message);
+        return 1;
+      }
+
+      // Translate instruction to assembler code for Hack machine
+      if (command.type == C_PUSH) {
+        writePush(&command);
+      } else if (command.type == C_POP) {
+        writePop(&command);
+      } else if (command.type == C_ARITHMETIC) {
+        writeArithmetic(&command);
+      } else if (command.type == C_LABEL) {
+        writeLabel(&command);
+      } else if (command.type == C_IF) {
+        writeIf(&command);
+      } else if (command.type == C_GOTO) {
+        writeGoto(&command);
+      } else if (command.type == C_FUNCTION) {
+        writeFunction(&command);
+      } else if (command.type == C_RETURN) {
+        writeReturn(&command);
+      } else if (command.type == C_CALL) {
+        writeCall(&command);
+      } else {
+      }
+      fprintf(fpasm, "%s\n", command.asm_commands);
+    }
+    fclose(fp);
   }
 
-  fclose(fp);
   fclose(fpasm);
   return 0;
 }
