@@ -431,8 +431,9 @@ void writeLabel(Command *command) {
 
 void writeIf(Command *command) {
   sprintf(command->asm_commands,
-          "\n//%s@SP\nM=M-1\nA=M\nD=M\n@CONTINUE_%d\nD;JEQ\n@%s\n0;JMP\n(CONTINUE_%d)\n",
-          command->vm_command, command->num_line, command->name, command->num_line);
+          "\n//%s@SP\nM=M-1\nA=M\nD=M\n@%s$CONTINUE_%d\nD;JEQ\n@%s\n0;JMP\n(%s$CONTINUE_%d)\n",
+          command->vm_command, command->static_name, command->num_line, command->name,
+          command->static_name, command->num_line);
 }
 
 void writeGoto(Command *command) {
@@ -533,10 +534,10 @@ int main(int argc, char *argv[]) {
 
     // For static variables names
     char static_filename[MAXLEN];
-    int k = strrchr(file_name_to_read, '/') - file_name_to_read + 1;
-    for (int i = k, j = 0; file_name_to_read[i] != '.'; i++, j++) {
-      static_filename[j] = file_name_to_read[i];
-    }
+    int static_filename_size =
+        strrchr(file_name_to_read, '.') - strrchr(file_name_to_read, '/') - 1;
+    strncpy(static_filename, strrchr(file_name_to_read, '/') + 1, static_filename_size);
+    static_filename[static_filename_size] = '\0';
 
     int num_line = 0;
     while (fgets(instruction, MAXLEN, fp) != NULL) {
