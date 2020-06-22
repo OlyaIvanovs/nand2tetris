@@ -1,0 +1,19 @@
+class SnakeGame {
+    field Square square;
+
+    constructor SnakeGame new() {
+        let square = Square.new(0, 0, 30);
+        return this;
+    }
+
+    method void run() {
+        do square.draw();
+        return;
+    }
+
+    method void dispose() {
+        do square.dispose();
+        do Memory.deAlloc(this);
+        return;
+    }
+}
