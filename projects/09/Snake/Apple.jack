@@ -1,0 +1,42 @@
+class Apple {
+    field int x, y;
+
+    constructor Apple new(int Ax, int Ay) {
+        let x = Ax;
+        let y = Ay;
+        do draw();
+        return this;
+    }
+
+    method void dispose() {
+        do Memory.deAlloc(this);
+        return;
+    }
+
+
+    method void draw() {
+        var int memAddress;
+        var int location;
+        let location = Math.multiply(y, 512) + x;
+
+        let memAddress = 16384+location;
+        do Memory.poke(memAddress+0, 312);
+        do Memory.poke(memAddress+32, 376);
+        do Memory.poke(memAddress+64, 496);
+        do Memory.poke(memAddress+96, 256);
+        do Memory.poke(memAddress+128, 16380);
+        do Memory.poke(memAddress+160, 32766);
+        do Memory.poke(memAddress+192, -1);
+        do Memory.poke(memAddress+224, -1);
+        do Memory.poke(memAddress+256, -1);
+        do Memory.poke(memAddress+288, -1);
+        do Memory.poke(memAddress+320, -1);
+        do Memory.poke(memAddress+352, -1);
+        do Memory.poke(memAddress+384, -1);
+        do Memory.poke(memAddress+416, -1);
+        do Memory.poke(memAddress+448, 32766);
+        do Memory.poke(memAddress+480, 15996);
+        return;
+    }
+}
+

@@ -1,17 +1,66 @@
 class SnakeGame {
     field Square square;
+    field Apple apple;
+    field int direction;
 
     constructor SnakeGame new() {
-        let square = Square.new(0, 0, 30);
+        var Array apples;
+
+        let square = Square.new(0, 0, 15);
+        let direction = 0;  // initial state is no movement
+        let apples = Array.new(5);
+        let apples[0] = Apple.new(25, 4);
+        let apples[1] = Apple.new(10, 2);
+        let apples[2] = Apple.new(35, 8);
+        let apples[3] = Apple.new(40, 10);
+        let apples[4] = Apple.new(5, 12);
         return this;
     }
 
     method void run() {
-        do square.draw();
-        return;
-    }
+      var char key;  // the key currently pressed by the user
+      var boolean exit;
+      let exit = false;
 
-    method void dispose() {
+      while (~exit) {
+         // waits for a key to be pressed
+         while (key = 0) {
+            let key = Keyboard.keyPressed();
+            // do moveSquare();
+         }
+         if (key = 81)  { let exit = true; }     // q key
+         if (key = 131) { let direction = 1; }   // up arrow
+         if (key = 133) { let direction = 2; }   // down arrow
+         if (key = 130) { let direction = 3; }   // left arrow
+         if (key = 132) { let direction = 4; }   // right arrow
+
+         // waits for the key to be released
+         while (~(key = 0)) {
+            let key = Keyboard.keyPressed();
+            do moveSquare();
+         }
+     }
+     return;
+   }
+
+    method void moveSquare() {
+        if (direction = 1) {
+            do square.moveUp();
+        }
+        if (direction = 2) {
+            do square.moveDown();
+        }
+        if (direction = 3) {
+            do square.moveLeft();
+        }
+        if (direction = 4) {
+            do square.moveRight();
+        }
+        do Sys.wait(5);
+        return;
+   }
+
+   method void dispose() {
         do square.dispose();
         do Memory.deAlloc(this);
         return;
